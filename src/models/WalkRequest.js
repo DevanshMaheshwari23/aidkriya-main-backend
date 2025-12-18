@@ -24,19 +24,52 @@ const walkRequestSchema = new mongoose.Schema({
     min: 15,
     max: 240
   },
-  pace: {
+  mobilityLevel: {
     type: String,
-    enum: ['Slow', 'Moderate', 'Fast', 'Very Fast'],
+    enum: ['INDEPENDENT', 'LIGHT_SUPPORT', 'WALKING_AID_USER', 'LIMITED_MOBILITY'],
     required: true
   },
-  conversationLevel: {
+  primaryPurpose: {
     type: String,
-    enum: ['Silent', 'Light', 'Moderate', 'Chatty'],
+    enum: ['MEDICAL_RECOVERY', 'EXERCISE_FITNESS', 'ERRANDS_SHOPPING', 'FRESH_AIR_LEISURE', 'SOCIAL_COMPANION', 'SAFETY_MONITORING'],
     required: true
   },
-  languages: [{
-    type: String
-  }],
+  purposeDetails: {
+    type: String,
+    maxlength: 200
+  },
+  communicationNeeds: {
+    languages: {
+      type: [String],
+      validate: {
+        validator: function(v) {
+          return Array.isArray(v) && v.length > 0;
+        },
+        message: 'Languages must include at least one item'
+      },
+      required: true
+    },
+    hearingImpaired: {
+      type: Boolean,
+      default: false
+    },
+    speechDifficulty: {
+      type: Boolean,
+      default: false
+    },
+    prefersNonVerbal: {
+      type: Boolean,
+      default: false
+    },
+    requiresClearCommunication: {
+      type: Boolean,
+      default: false
+    },
+    additionalNotes: {
+      type: String,
+      maxlength: 150
+    }
+  },
   specialRequirements: {
     type: String,
     maxlength: 500
@@ -102,5 +135,7 @@ otpExpiresAt: {
 // Index for geospatial queries
 walkRequestSchema.index({ latitude: 1, longitude: 1 });
 walkRequestSchema.index({ status: 1, createdAt: -1 });
+walkRequestSchema.index({ mobilityLevel: 1 });
+walkRequestSchema.index({ primaryPurpose: 1 });
 
 module.exports = mongoose.model('WalkRequest', walkRequestSchema);

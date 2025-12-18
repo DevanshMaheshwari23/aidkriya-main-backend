@@ -21,8 +21,15 @@ router.post(
     body('longitude').custom(validators.isValidLongitude),
     body('address').notEmpty().withMessage('Address is required'),
     body('durationMinutes').isInt({ min: 15, max: 240 }).withMessage('Duration must be between 15 and 240 minutes'),
-    body('pace').isIn(['Slow', 'Moderate', 'Fast', 'Very Fast']).withMessage('Invalid pace'),
-    body('conversationLevel').isIn(['Silent', 'Light', 'Moderate', 'Chatty']).withMessage('Invalid conversation level'),
+    body('mobilityLevel').isIn(['INDEPENDENT', 'LIGHT_SUPPORT', 'WALKING_AID_USER', 'LIMITED_MOBILITY']).withMessage('Invalid mobility level'),
+    body('primaryPurpose').isIn(['MEDICAL_RECOVERY', 'EXERCISE_FITNESS', 'ERRANDS_SHOPPING', 'FRESH_AIR_LEISURE', 'SOCIAL_COMPANION', 'SAFETY_MONITORING']).withMessage('Invalid primary purpose'),
+    body('purposeDetails').optional().isLength({ max: 200 }).withMessage('Purpose details must be less than 200 characters'),
+    body('communicationNeeds.languages').isArray({ min: 1 }).withMessage('At least one language is required'),
+    body('communicationNeeds.hearingImpaired').optional().isBoolean().withMessage('hearingImpaired must be a boolean'),
+    body('communicationNeeds.speechDifficulty').optional().isBoolean().withMessage('speechDifficulty must be a boolean'),
+    body('communicationNeeds.prefersNonVerbal').optional().isBoolean().withMessage('prefersNonVerbal must be a boolean'),
+    body('communicationNeeds.requiresClearCommunication').optional().isBoolean().withMessage('requiresClearCommunication must be a boolean'),
+    body('communicationNeeds.additionalNotes').optional().isLength({ max: 150 }).withMessage('Additional notes must be less than 150 characters'),
     validate
   ],
   createWalkRequest

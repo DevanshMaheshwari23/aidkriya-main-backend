@@ -14,15 +14,19 @@ exports.createWalkRequest = async (req, res) => {
       longitude,
       address,
       durationMinutes,
-      pace,
-      conversationLevel,
-      languages,
+      mobilityLevel,
+      primaryPurpose,
+      purposeDetails,
+      communicationNeeds,
       specialRequirements
     } = req.body;
 
     // Validate required fields
-    if (!latitude || !longitude || !address || !durationMinutes || !pace || !conversationLevel) {
+    if (!latitude || !longitude || !address || !durationMinutes || !mobilityLevel || !primaryPurpose) {
       return errorResponse(res, 400, 'Please provide all required fields');
+    }
+    if (!communicationNeeds || !Array.isArray(communicationNeeds.languages) || communicationNeeds.languages.length === 0) {
+      return errorResponse(res, 400, 'Communication needs must include at least one language');
     }
 
     // Check if user already has an active request
@@ -42,9 +46,10 @@ exports.createWalkRequest = async (req, res) => {
       longitude,
       address,
       durationMinutes,
-      pace,
-      conversationLevel,
-      languages,
+      mobilityLevel,
+      primaryPurpose,
+      purposeDetails,
+      communicationNeeds,
       specialRequirements,
       status: 'PENDING'
     });
