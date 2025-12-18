@@ -98,6 +98,10 @@ const walkRequestSchema = new mongoose.Schema({
   cancelledAt: {
     type: Date
   },
+  subscriptionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'WalkSubscription'
+  },
   otp: {
   type: String
 },

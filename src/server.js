@@ -57,6 +57,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/profile', require('./routes/profile'));
 app.use('/api/walk-request', require('./routes/walkRequest'));
 app.use('/api/matching', require('./routes/matching'));
+app.use('/api/subscription', require('./routes/subscription'));
 app.use('/api/tracking', require('./routes/tracking'));
 app.use('/api/payment', require('./routes/payment'));
 app.use('/api/rating', require('./routes/rating'));
