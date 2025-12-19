@@ -153,15 +153,10 @@ exports.getAverageRating = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    const [ratings, feedbacks] = await Promise.all([
-      Rating.find({ reviewedUserId: userId }),
-      Feedback.find({ partnerId: userId })
-    ]);
-
-    const values = [
-      ...ratings.map(r => Number(r.rating) || 0),
-      ...feedbacks.map(f => Number(f.rating) || 0)
-    ].filter(v => v >= 1 && v <= 5);
+    const feedbacks = await Feedback.find({ partnerId: userId });
+    const values = feedbacks
+      .map(f => Number(f.rating) || 0)
+      .filter(v => v >= 1 && v <= 5);
 
     if (values.length === 0) {
       return successResponse(res, 200, 'No ratings found', {
@@ -241,15 +236,10 @@ exports.reportReview = async (req, res) => {
 // Helper function to update user's average rating
 async function updateUserRating(userId) {
   try {
-    const [ratings, feedbacks] = await Promise.all([
-      Rating.find({ reviewedUserId: userId }),
-      Feedback.find({ partnerId: userId })
-    ]);
-
-    const values = [
-      ...ratings.map(r => Number(r.rating) || 0),
-      ...feedbacks.map(f => Number(f.rating) || 0)
-    ].filter(v => v >= 1 && v <= 5);
+    const feedbacks = await Feedback.find({ partnerId: userId });
+    const values = feedbacks
+      .map(f => Number(f.rating) || 0)
+      .filter(v => v >= 1 && v <= 5);
 
     const profile = await Profile.findOne({ userId });
     if (profile) {
