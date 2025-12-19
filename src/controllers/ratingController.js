@@ -1,6 +1,7 @@
 const Rating = require('../models/Rating');
 const Profile = require('../models/Profile');
 const WalkSession = require('../models/WalkSession');
+const Feedback = require('../models/Feedback');
 const { successResponse, errorResponse } = require('../utils/responseHelper');
 const { sendNotification, notificationTemplates } = require('../utils/notificationHelper');
 
@@ -152,38 +153,36 @@ exports.getAverageRating = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    const ratings = await Rating.find({ reviewedUserId: userId });
+    const [ratings, feedbacks] = await Promise.all([
+      Rating.find({ reviewedUserId: userId }),
+      Feedback.find({ partnerId: userId })
+    ]);
 
-    if (ratings.length === 0) {
+    const values = [
+      ...ratings.map(r => Number(r.rating) || 0),
+      ...feedbacks.map(f => Number(f.rating) || 0)
+    ].filter(v => v >= 1 && v <= 5);
+
+    if (values.length === 0) {
       return successResponse(res, 200, 'No ratings found', {
         average_rating: 0,
         total_ratings: 0,
-        rating_distribution: {
-          5: 0,
-          4: 0,
-          3: 0,
-          2: 0,
-          1: 0
-        }
+        rating_distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }
       });
     }
 
-    // Calculate average
-    const sum = ratings.reduce((acc, curr) => acc + curr.rating, 0);
-    const average = sum / ratings.length;
+    const sum = values.reduce((acc, curr) => acc + curr, 0);
+    const average = sum / values.length;
 
-    // Calculate distribution
-    const distribution = {
-      5: ratings.filter(r => r.rating === 5).length,
-      4: ratings.filter(r => r.rating === 4).length,
-      3: ratings.filter(r => r.rating === 3).length,
-      2: ratings.filter(r => r.rating === 2).length,
-      1: ratings.filter(r => r.rating === 1).length
-    };
+    const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    values.forEach(v => {
+      const star = Math.min(5, Math.max(1, Math.round(v)));
+      distribution[star] = (distribution[star] || 0) + 1;
+    });
 
     successResponse(res, 200, 'Average rating calculated', {
       average_rating: parseFloat(average.toFixed(2)),
-      total_ratings: ratings.length,
+      total_ratings: values.length,
       rating_distribution: distribution
     });
   } catch (error) {
@@ -242,19 +241,30 @@ exports.reportReview = async (req, res) => {
 // Helper function to update user's average rating
 async function updateUserRating(userId) {
   try {
-    const ratings = await Rating.find({ reviewedUserId: userId });
-    
-    if (ratings.length === 0) return;
+    const [ratings, feedbacks] = await Promise.all([
+      Rating.find({ reviewedUserId: userId }),
+      Feedback.find({ partnerId: userId })
+    ]);
 
-    const sum = ratings.reduce((acc, curr) => acc + curr.rating, 0);
-    const average = sum / ratings.length;
+    const values = [
+      ...ratings.map(r => Number(r.rating) || 0),
+      ...feedbacks.map(f => Number(f.rating) || 0)
+    ].filter(v => v >= 1 && v <= 5);
 
     const profile = await Profile.findOne({ userId });
     if (profile) {
-      profile.rating = parseFloat(average.toFixed(2));
+      if (values.length === 0) {
+        profile.rating = 0;
+      } else {
+        const sum = values.reduce((acc, curr) => acc + curr, 0);
+        const average = sum / values.length;
+        profile.rating = parseFloat(average.toFixed(2));
+      }
       await profile.save();
     }
   } catch (error) {
     console.error('Update user rating error:', error);
   }
 }
+
+exports.updateUserRating = updateUserRating;

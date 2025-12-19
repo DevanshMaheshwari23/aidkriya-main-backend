@@ -1,6 +1,7 @@
 const WalkSession = require('../models/WalkSession');
 const Feedback = require('../models/Feedback');
 const { successResponse, errorResponse } = require('../utils/responseHelper');
+const { updateUserRating } = require('./ratingController');
 
 exports.createFeedback = async (req, res) => {
   console.log('[Feedback] ENDPOINT HIT - Request received');
@@ -59,6 +60,9 @@ exports.createFeedback = async (req, res) => {
       message: message || null,
     });
     await feedback.save();
+    if (partnerId) {
+      await updateUserRating(partnerId);
+    }
     console.log('[Feedback] ✅ Feedback saved successfully with session:', feedback._id);
     return res.status(201).json({ success: true, message: 'Feedback submitted successfully', data: { feedbackId: feedback._id, rating: feedback.rating } });
   } catch (error) {
