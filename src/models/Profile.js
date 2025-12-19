@@ -83,6 +83,16 @@ const profileSchema = new mongoose.Schema({
     type: Boolean,
     default: true // For walkers
   },
+  manualBusy: {
+    type: Boolean,
+    default: false
+  },
+  lastHeartbeatAt: {
+    type: Date
+  },
+  availabilityCooldownUntil: {
+    type: Date
+  },
   emergencyContacts: [{
   name: String,
   phone: String

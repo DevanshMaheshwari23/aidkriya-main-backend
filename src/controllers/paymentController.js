@@ -182,6 +182,8 @@ exports.verifyPayment = async (req, res) => {
       walkerProfile.walletBalance += payment.walkerEarnings;
       walkerProfile.totalEarnings += payment.walkerEarnings;
       walkerProfile.totalWalks = (walkerProfile.totalWalks || 0) + 1;
+      walkerProfile.isAvailable = true;
+      walkerProfile.availabilityCooldownUntil = new Date(Date.now() + 30 * 1000);
       await walkerProfile.save();
     }
 

@@ -6,6 +6,7 @@ const {
   setupProfile,
   uploadVerification,
   updateAvailability,
+  heartbeat,
   getWalletBalance
 } = require('../controllers/profileController');
 const { protect, authorize } = require('../middleware/auth');
@@ -49,9 +50,18 @@ router.put(
   authorize('WALKER'),
   [
     body('isAvailable').isBoolean().withMessage('Availability must be a boolean'),
+    body('manualBusy').optional().isBoolean().withMessage('manualBusy must be a boolean'),
     validate
   ],
   updateAvailability
+);
+
+// @route   POST /api/profile/heartbeat
+router.post(
+  '/heartbeat',
+  protect,
+  authorize('WALKER'),
+  heartbeat
 );
 
 // @route   GET /api/profile/wallet

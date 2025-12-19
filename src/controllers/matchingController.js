@@ -17,10 +17,23 @@ exports.findWalkers = async (req, res) => {
       return errorResponse(res, 404, 'Walk request not found');
     }
 
-    // Get all available walkers
+    const cutoff = new Date(Date.now() - 60 * 1000);
+    const busyWalkerIds = await WalkRequest.find({
+      status: { $in: ['PENDING', 'MATCHED', 'IN_PROGRESS', 'PAYMENT_PENDING'] }
+    }).distinct('walkerId');
+
     const walkerProfiles = await Profile.find({
-      isAvailable: true
-    }).populate('userId', 'name phone email role');
+      isAvailable: true,
+      manualBusy: { $ne: true },
+      lastHeartbeatAt: { $gte: cutoff },
+      $or: [
+        { availabilityCooldownUntil: { $exists: false } },
+        { availabilityCooldownUntil: { $lte: new Date() } }
+      ]
+    })
+      .where('userId')
+      .nin(busyWalkerIds)
+      .populate('userId', 'name phone email role');
 
     // Filter walkers by role
     const availableWalkers = walkerProfiles.filter(

@@ -347,7 +347,7 @@ exports.endWalkSession = async (req, res) => {
 
     const walkerProfile = await Profile.findOne({ userId: walkSession.walkerId });
     if (walkerProfile) {
-      walkerProfile.isAvailable = true;
+      walkerProfile.isAvailable = false;
       await walkerProfile.save();
     }
 

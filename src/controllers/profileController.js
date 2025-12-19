@@ -131,7 +131,7 @@ exports.uploadVerification = async (req, res) => {
 exports.updateAvailability = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { isAvailable } = req.body;
+    const { isAvailable, manualBusy } = req.body;
 
     if (typeof isAvailable !== 'boolean') {
       return errorResponse(res, 400, 'Please provide valid availability status');
@@ -144,14 +144,39 @@ exports.updateAvailability = async (req, res) => {
     }
 
     profile.isAvailable = isAvailable;
+    if (typeof manualBusy === 'boolean') {
+      profile.manualBusy = manualBusy;
+    }
     await profile.save();
 
     successResponse(res, 200, 'Availability updated successfully', {
-      isAvailable: profile.isAvailable
+      isAvailable: profile.isAvailable,
+      manualBusy: profile.manualBusy
     });
   } catch (error) {
     console.error('Update availability error:', error);
     errorResponse(res, 500, 'Error updating availability', error.message);
+  }
+};
+
+// @desc    Heartbeat to maintain availability
+// @route   POST /api/profile/heartbeat
+// @access  Private (Walker only)
+exports.heartbeat = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const profile = await Profile.findOne({ userId });
+    if (!profile) {
+      return errorResponse(res, 404, 'Profile not found');
+    }
+
+    profile.lastHeartbeatAt = new Date();
+    await profile.save();
+
+    successResponse(res, 200, 'Heartbeat received', { lastHeartbeatAt: profile.lastHeartbeatAt });
+  } catch (error) {
+    console.error('Heartbeat error:', error);
+    errorResponse(res, 500, 'Error updating heartbeat', error.message);
   }
 };
 
