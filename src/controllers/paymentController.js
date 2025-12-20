@@ -250,7 +250,11 @@ exports.getTransactionHistory = async (req, res) => {
         .sort({ completedAt: -1 })
         .skip(skip)
         .limit(parseInt(limit))
-        .populate('walkSessionId'),
+        .populate([
+          { path: 'walkSessionId', populate: { path: 'walkRequestId', select: 'address' } },
+          { path: 'walkerId', select: 'name' },
+          { path: 'wandererId', select: 'name' }
+        ]),
       Payment.countDocuments({
         $or: [{ wandererId: userId }, { walkerId: userId }],
         status: 'SUCCESS'
@@ -259,23 +263,43 @@ exports.getTransactionHistory = async (req, res) => {
       WalletTransaction.countDocuments({ userId }),
     ]);
 
-    // Transform to transaction format
-    const formattedTransactions = transactions.map(payment => {
+    const profileCache = new Map();
+    const getProfileImage = async (uid) => {
+      const key = uid.toString();
+      if (profileCache.has(key)) return profileCache.get(key);
+      const profile = await Profile.findOne({ userId: uid }).select('profileImage');
+      const url = profile ? profile.profileImage : null;
+      profileCache.set(key, url);
+      return url;
+    };
+
+    const formattedTransactions = [];
+    for (const payment of transactions) {
       const isWanderer = payment.wandererId.toString() === userId;
-      
-      return {
+      const session = payment.walkSessionId;
+      let location = null;
+      if (session && session.walkRequestId && session.walkRequestId.address) {
+        location = session.walkRequestId.address;
+      }
+      const partnerId = isWanderer ? payment.walkerId : payment.wandererId;
+      const partnerName = partnerId && partnerId.name ? partnerId.name : null;
+      const partnerImageUrl = partnerId ? await getProfileImage(partnerId._id || partnerId) : null;
+      formattedTransactions.push({
         id: payment._id,
         user_id: userId,
         type: isWanderer ? 'PAYMENT' : 'EARNING',
         amount: isWanderer ? payment.totalAmount : payment.walkerEarnings,
         description: isWanderer 
-          ? `Payment for walk session`
-          : `Earnings from walk session`,
+          ? 'Payment for walk session'
+          : 'Earnings from walk session',
         timestamp: payment.completedAt,
         reference_id: payment._id,
-        status: payment.status
-      };
-    });
+        status: payment.status,
+        walk_location: location,
+        partner_name: partnerName,
+        partner_image_url: partnerImageUrl
+      });
+    }
 
     const formattedWallet = walletTxns.map(tx => ({
       id: tx._id,
