@@ -2,7 +2,6 @@ const Payment = require('../models/Payment');
 const WalkSession = require('../models/WalkSession');
 const WalkRequest = require('../models/WalkRequest');
 const Profile = require('../models/Profile');
-const WalletTransaction = require('../models/WalletTransaction');
 const razorpay = require('../config/razorpay');
 const { successResponse, errorResponse } = require('../utils/responseHelper');
 const { calculateFare, verifyRazorpaySignature } = require('../utils/paymentHelpers');
@@ -242,7 +241,7 @@ exports.getTransactionHistory = async (req, res) => {
 
     const skip = (page - 1) * limit;
 
-    const [transactions, total, walletTxns, walletTotal] = await Promise.all([
+    const [transactions, total] = await Promise.all([
       Payment.find({
         $or: [{ wandererId: userId }, { walkerId: userId }],
         status: 'SUCCESS'
@@ -250,78 +249,37 @@ exports.getTransactionHistory = async (req, res) => {
         .sort({ completedAt: -1 })
         .skip(skip)
         .limit(parseInt(limit))
-        .populate([
-          { path: 'walkSessionId', populate: { path: 'walkRequestId', select: 'address' } },
-          { path: 'walkerId', select: 'name' },
-          { path: 'wandererId', select: 'name' }
-        ]),
+        .populate('walkSessionId'),
       Payment.countDocuments({
         $or: [{ wandererId: userId }, { walkerId: userId }],
         status: 'SUCCESS'
-      }),
-      WalletTransaction.find({ userId }).sort({ timestamp: -1 }).skip(skip).limit(parseInt(limit)),
-      WalletTransaction.countDocuments({ userId }),
+      })
     ]);
 
-    const profileCache = new Map();
-    const getProfileImage = async (uid) => {
-      const key = uid.toString();
-      if (profileCache.has(key)) return profileCache.get(key);
-      const profile = await Profile.findOne({ userId: uid }).select('profileImage');
-      const url = profile ? profile.profileImage : null;
-      profileCache.set(key, url);
-      return url;
-    };
-
-    const formattedTransactions = [];
-    for (const payment of transactions) {
+    // Transform to transaction format
+    const formattedTransactions = transactions.map(payment => {
       const isWanderer = payment.wandererId.toString() === userId;
-      const session = payment.walkSessionId;
-      let location = null;
-      if (session && session.walkRequestId && session.walkRequestId.address) {
-        location = session.walkRequestId.address;
-      }
-      const partnerId = isWanderer ? payment.walkerId : payment.wandererId;
-      const partnerName = partnerId && partnerId.name ? partnerId.name : null;
-      const partnerImageUrl = partnerId ? await getProfileImage(partnerId._id || partnerId) : null;
-      formattedTransactions.push({
+      
+      return {
         id: payment._id,
         user_id: userId,
         type: isWanderer ? 'PAYMENT' : 'EARNING',
         amount: isWanderer ? payment.totalAmount : payment.walkerEarnings,
         description: isWanderer 
-          ? 'Payment for walk session'
-          : 'Earnings from walk session',
+          ? `Payment for walk session`
+          : `Earnings from walk session`,
         timestamp: payment.completedAt,
         reference_id: payment._id,
-        status: payment.status,
-        walk_location: location,
-        partner_name: partnerName,
-        partner_image_url: partnerImageUrl
-      });
-    }
-
-    const formattedWallet = walletTxns.map(tx => ({
-      id: tx._id,
-      user_id: userId,
-      type: tx.type,
-      amount: tx.amount,
-      description: tx.description || (tx.type === 'WALLET_DEBIT' ? 'Withdrawal' : 'Wallet top-up'),
-      timestamp: tx.timestamp || tx.createdAt,
-      reference_id: null,
-      status: tx.status || 'SUCCESS',
-    }));
-
-    const combined = [...formattedTransactions, ...formattedWallet].sort(
-      (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
-    );
+        status: payment.status
+      };
+    });
 
     successResponse(res, 200, 'Transaction history retrieved', {
-      transactions: combined,
+      transactions: formattedTransactions,
       pagination: {
         currentPage: parseInt(page),
-        totalPages: Math.ceil((total + walletTotal) / limit),
-        totalItems: total + walletTotal
+        totalPages: Math.ceil(total / limit),
+        totalItems: total
       }
     });
   } catch (error) {
@@ -401,53 +359,5 @@ exports.getWalletBalance = async (req, res) => {
   } catch (error) {
     console.error('Get wallet balance error:', error);
     errorResponse(res, 500, 'Error fetching wallet balance', error.message);
-  }
-};
-
-// @desc    Withdraw money from wallet
-// @route   POST /api/payment/withdraw
-// @access  Private
-exports.withdrawFromWallet = async (req, res) => {
-  try {
-    const { user_id, amount, upi_id, account_number, ifsc } = req.body;
-
-    if (!user_id || !amount || amount <= 0) {
-      return errorResponse(res, 400, 'Invalid withdrawal request');
-    }
-
-    const profile = await Profile.findOne({ userId: user_id });
-    if (!profile) {
-      return errorResponse(res, 404, 'Profile not found');
-    }
-
-    if ((profile.walletBalance || 0) < parseFloat(amount)) {
-      return errorResponse(res, 400, 'Insufficient wallet balance');
-    }
-
-    profile.walletBalance -= parseFloat(amount);
-    await profile.save();
-
-    const desc =
-      upi_id && upi_id.length
-        ? `Withdrawal to UPI ${upi_id}`
-        : account_number && ifsc
-        ? 'Withdrawal to bank account'
-        : 'Wallet withdrawal';
-
-    await WalletTransaction.create({
-      userId: user_id,
-      type: 'WALLET_DEBIT',
-      amount: parseFloat(amount),
-      description: desc,
-      status: 'SUCCESS',
-      timestamp: new Date(),
-    });
-
-    successResponse(res, 200, 'Withdrawal processed successfully', {
-      wallet_balance: profile.walletBalance,
-    });
-  } catch (error) {
-    console.error('Withdraw from wallet error:', error);
-    errorResponse(res, 500, 'Error withdrawing funds', error.message);
   }
 };

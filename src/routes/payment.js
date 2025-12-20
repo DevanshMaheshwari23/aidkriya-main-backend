@@ -7,8 +7,7 @@ const {
   getTransactionHistory,
   getPaymentDetails,
   addToWallet,
-  getWalletBalance,
-  withdrawFromWallet
+  getWalletBalance
 } = require('../controllers/paymentController');
 const { protect } = require('../middleware/auth');
 const { validate } = require('../middleware/validation');
@@ -75,21 +74,6 @@ router.post(
     validate
   ],
   addToWallet
-);
-
-// @route   POST /api/payment/withdraw
-router.post(
-  '/withdraw',
-  protect,
-  [
-    body('user_id').notEmpty().withMessage('User ID is required'),
-    body('amount').isFloat({ min: 1 }).withMessage('Amount must be greater than 0'),
-    body('upi_id').optional().isString(),
-    body('account_number').optional().isString(),
-    body('ifsc').optional().isString(),
-    validate
-  ],
-  withdrawFromWallet
 );
 
 // @route   GET /api/payment/wallet/:userId
