@@ -4,6 +4,7 @@ const WalkRequest = require('../models/WalkRequest');
 const Profile = require('../models/Profile');
 const Payout = require('../models/Payout');
 const razorpay = require('../config/razorpay');
+const https = require('https');
 const { successResponse, errorResponse } = require('../utils/responseHelper');
 const { calculateFare, verifyRazorpaySignature } = require('../utils/paymentHelpers');
 const { sendNotification, notificationTemplates } = require('../utils/notificationHelper');
@@ -397,6 +398,15 @@ exports.withdrawFromWallet = async (req, res) => {
     if (!amount || amount <= 0) {
       return errorResponse(res, 400, 'Invalid amount');
     }
+    // Enforce minimum withdraw threshold from env (default ₹100)
+    const minWithdraw = parseFloat(process.env.MIN_WITHDRAW_AMOUNT || '100');
+    if (parseFloat(amount) < minWithdraw) {
+      return errorResponse(
+        res,
+        400,
+        `Minimum withdraw amount is ₹${minWithdraw.toFixed(0)}`
+      );
+    }
     if (!method || !['BANK', 'UPI'].includes(method)) {
       return errorResponse(res, 400, 'Invalid method');
     }
@@ -415,6 +425,7 @@ exports.withdrawFromWallet = async (req, res) => {
       return errorResponse(res, 400, 'Insufficient wallet balance');
     }
 
+    // Create payout record (start as PENDING; escalate to SUCCESS when processed)
     const payout = await Payout.create({
       userId: user_id,
       amount: parseFloat(amount),
@@ -423,10 +434,134 @@ exports.withdrawFromWallet = async (req, res) => {
       accountNumber: account_number,
       ifsc,
       upiId: upi_id,
-      status: 'SUCCESS',
-      completedAt: new Date()
+      status: 'PENDING',
+      createdAt: new Date()
     });
 
+    // Attempt real-time payout via RazorpayX if enabled and configured
+    const payoutsEnabled =
+      (process.env.RAZORPAY_PAYOUTS_ENABLED || '').toLowerCase() === 'true';
+    const keyId = process.env.RAZORPAY_KEY_ID;
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    const rpxAccountNumber = process.env.RAZORPAYX_ACCOUNT_NUMBER; // Needed for RazorpayX payouts
+
+    try {
+      if (payoutsEnabled && keyId && keySecret && rpxAccountNumber) {
+        // Prepare payout payload
+        const payoutPayload = {
+          account_number: rpxAccountNumber,
+          amount: Math.round(parseFloat(amount) * 100), // in paise
+          currency: 'INR',
+          mode: method === 'UPI' ? 'UPI' : 'IMPS',
+          purpose: 'payout',
+          queue_if_low_balance: true,
+          // Create fund account inline (RazorpayX supports inline fund_account)
+          fund_account: method === 'UPI'
+            ? {
+                account_type: 'vpa',
+                vpa: { address: upi_id },
+                contact: {
+                  name: beneficiary_name || profile.name || 'Walker',
+                  email: profile.email || undefined,
+                  contact: profile.phone || undefined,
+                  type: 'employee',
+                },
+              }
+            : {
+                account_type: 'bank_account',
+                bank_account: {
+                  name: beneficiary_name || profile.name || 'Walker',
+                  ifsc: ifsc,
+                  account_number: account_number
+                },
+                contact: {
+                  name: beneficiary_name || profile.name || 'Walker',
+                  email: profile.email || undefined,
+                  contact: profile.phone || undefined,
+                  type: 'employee',
+                },
+              },
+          // Notes for reconciliation
+          notes: {
+            user_id,
+            payout_id: payout._id.toString(),
+            method,
+          }
+        };
+
+        // Perform HTTP request to RazorpayX Payouts API via basic auth
+        const authHeader =
+          'Basic ' + Buffer.from(`${keyId}:${keySecret}`).toString('base64');
+
+        let result;
+        let statusOk = false;
+        if (typeof fetch === 'function') {
+          const response = await fetch('https://api.razorpay.com/v1/payouts', {
+            method: 'POST',
+            headers: {
+              'Authorization': authHeader,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payoutPayload)
+          });
+          result = await response.json();
+          statusOk = response.ok;
+        } else {
+          result = await new Promise((resolve, reject) => {
+            const data = JSON.stringify(payoutPayload);
+            const req = https.request(
+              'https://api.razorpay.com/v1/payouts',
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': authHeader,
+                  'Content-Type': 'application/json',
+                  'Content-Length': Buffer.byteLength(data)
+                }
+              },
+              (res) => {
+                let body = '';
+                res.on('data', (chunk) => (body += chunk));
+                res.on('end', () => {
+                  try {
+                    statusOk = res.statusCode >= 200 && res.statusCode < 300;
+                    resolve(JSON.parse(body));
+                  } catch (err) {
+                    reject(err);
+                  }
+                });
+              }
+            );
+            req.on('error', reject);
+            req.write(data);
+            req.end();
+          });
+        }
+
+        if (statusOk && result && result.id) {
+          payout.externalReferenceId = result.id;
+          payout.status = (result.status || '').toUpperCase() === 'PROCESSED'
+            ? 'SUCCESS'
+            : 'PENDING';
+          payout.completedAt = payout.status === 'SUCCESS' ? new Date() : undefined;
+          await payout.save();
+        } else {
+          // If payout API failed, keep as PENDING and include error
+          console.error('RazorpayX payout failure:', result);
+        }
+      } else {
+        // Payouts not enabled/configured: mark as SUCCESS to simulate instant transfer
+        payout.status = 'SUCCESS';
+        payout.externalReferenceId = `SIMULATED_${Date.now()}`;
+        payout.completedAt = new Date();
+        await payout.save();
+      }
+    } catch (payoutErr) {
+      console.error('Payout processing error:', payoutErr);
+      // Leave payout as PENDING; can be retried by ops/admin later
+    }
+
+    // Deduct from wallet and persist
     profile.walletBalance -= parseFloat(amount);
     await profile.save();
 
