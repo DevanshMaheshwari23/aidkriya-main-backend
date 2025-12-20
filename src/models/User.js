@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const userSchema = new mongoose.Schema({
   name: {
@@ -34,6 +34,10 @@ const userSchema = new mongoose.Schema({
     enum: ['WALKER', 'WANDERER'],
     required: [true, 'Role is required']
   },
+  twoFactorEnabled: {
+    type: Boolean,
+    default: false
+  },
   isVerified: {
     type: Boolean,
     default: false
@@ -64,20 +68,25 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Hash password before saving
 userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) {
     return next();
   }
-  
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
+
+  const isHex64 = typeof this.password === 'string' && /^[a-f0-9]{64}$/i.test(this.password);
+  if (!isHex64) {
+    this.password = crypto.createHash('sha256').update(this.password).digest('hex');
+  }
   next();
 });
 
-// Method to compare password
 userSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
+  const hash = crypto.createHash('sha256').update(candidatePassword).digest('hex');
+  return hash === this.password;
+};
+
+userSchema.methods.comparePasswordHash = function(passwordHash) {
+  return passwordHash === this.password;
 };
 
 module.exports = mongoose.model('User', userSchema);
