@@ -187,6 +187,13 @@ exports.verifyPayment = async (req, res) => {
       await walkerProfile.save();
     }
 
+    // Update wanderer's total walks count
+    const wandererProfile = await Profile.findOne({ userId: payment.wandererId });
+    if (wandererProfile) {
+      wandererProfile.totalWalks = (wandererProfile.totalWalks || 0) + 1;
+      await wandererProfile.save();
+    }
+
     // Send notifications
     const notification = notificationTemplates.paymentSuccess(payment.totalAmount);
     await sendNotification(
