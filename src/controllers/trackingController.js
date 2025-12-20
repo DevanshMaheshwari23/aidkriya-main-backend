@@ -153,6 +153,35 @@ exports.startWalkSession = async (req, res) => {
 
     const walkSession = await WalkSession.create(sessionPayload);
 
+    const requesterIsWalker = walkRequest.walkerId.toString() === req.user._id.toString();
+    const requesterIsWanderer = walkRequest.wandererId.toString() === req.user._id.toString();
+    if (sanitizedPoint) {
+      if (requesterIsWalker) {
+        walkSession.lastWalkerLocation = sanitizedPoint;
+      } else if (requesterIsWanderer) {
+        walkSession.lastWandererLocation = sanitizedPoint;
+      }
+    } else {
+      const walkerProfile = await Profile.findOne({ userId: walkRequest.walkerId });
+      if (
+        walkerProfile &&
+        walkerProfile.latitude !== undefined &&
+        walkerProfile.longitude !== undefined
+      ) {
+        const fallbackPoint = {
+          latitude: Number(walkerProfile.latitude),
+          longitude: Number(walkerProfile.longitude),
+          timestamp: new Date(walkerProfile.locationUpdatedAt || Date.now())
+        };
+        walkSession.lastWalkerLocation = fallbackPoint;
+        if (!Array.isArray(walkSession.route)) {
+          walkSession.route = [];
+        }
+        walkSession.route.push(fallbackPoint);
+      }
+    }
+    await walkSession.save();
+
     walkRequest.status = 'IN_PROGRESS';
     walkRequest.startedAt = walkSession.startTime;
     await walkRequest.save();

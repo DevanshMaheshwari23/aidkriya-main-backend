@@ -90,6 +90,12 @@ const notificationTemplates = {
     type: 'WALK_ACCEPTED'
   }),
   
+  walkRequestDeclined: (walkerName) => ({
+    title: 'Walk Request Declined',
+    message: `${walkerName} declined your walk request. Searching for other walkers...`,
+    type: 'WALK_DECLINED'
+  }),
+  
   walkStarted: () => ({
     title: 'Walk Started',
     message: 'Your walk has started. Enjoy your walking experience!',

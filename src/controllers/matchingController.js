@@ -159,11 +159,77 @@ walkRequest.otpVerified = false;
 exports.rejectWalkRequest = async (req, res) => {
   try {
     const { match_id } = req.body;
+    const walkerId = req.user._id;
 
-    // In a real app, you'd track match rejections separately
-    // For now, we just acknowledge the rejection
+    const walkRequest = await WalkRequest.findById(match_id);
+    if (!walkRequest) {
+      return errorResponse(res, 404, 'Walk request not found');
+    }
 
-    successResponse(res, 200, 'Walk request rejected');
+    if (walkRequest.status !== 'PENDING') {
+      return errorResponse(res, 400, 'Walk request is no longer pending');
+    }
+
+    if (walkRequest.walkerId?.toString() !== walkerId.toString()) {
+      return errorResponse(res, 403, 'This request is not assigned to you');
+    }
+
+    walkRequest.walkerId = null;
+    await walkRequest.save();
+
+    const declineNotification = notificationTemplates.walkRequestDeclined(req.user.name);
+    await sendNotification(
+      walkRequest.wandererId,
+      declineNotification.title,
+      declineNotification.message,
+      { walkRequestId: walkRequest._id },
+      { type: declineNotification.type, relatedId: walkRequest._id, relatedModel: 'WalkRequest' }
+    );
+
+    const cutoff = new Date(Date.now() - 60 * 1000);
+    const busyWalkerIds = await WalkRequest.find({
+      status: { $in: ['PENDING', 'MATCHED', 'IN_PROGRESS', 'PAYMENT_PENDING'] }
+    }).distinct('walkerId');
+
+    const nearbyProfiles = await Profile.find({
+      isAvailable: true,
+      manualBusy: { $ne: true },
+      lastHeartbeatAt: { $gte: cutoff },
+      $or: [
+        { availabilityCooldownUntil: { $exists: false } },
+        { availabilityCooldownUntil: { $lte: new Date() } }
+      ]
+    })
+      .where('userId')
+      .nin(busyWalkerIds)
+      .populate('userId', 'name phone email role');
+
+    const availableWalkers = nearbyProfiles.filter(
+      profile => profile.userId.role === 'WALKER'
+    );
+
+    const { latitude: reqLat, longitude: reqLng } = walkRequest;
+    const matches = availableWalkers
+      .filter((profile) => typeof profile.latitude === 'number' && typeof profile.longitude === 'number')
+      .map((profile) => ({
+        profile,
+        distance: calculateDistance(reqLat, reqLng, profile.latitude, profile.longitude)
+      }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 5);
+
+    for (const m of matches) {
+      const template = notificationTemplates.walkRequestReceived(req.user.name);
+      await sendNotification(
+        m.profile.userId._id,
+        template.title,
+        template.message,
+        { walkRequestId: walkRequest._id },
+        { type: template.type, relatedId: walkRequest._id, relatedModel: 'WalkRequest' }
+      );
+    }
+
+    successResponse(res, 200, 'Walk request rejected and re-broadcasted');
   } catch (error) {
     console.error('Reject walk request error:', error);
     errorResponse(res, 500, 'Error rejecting walk request', error.message);
@@ -189,6 +255,7 @@ exports.getPendingRequests = async (req, res) => {
     // Transform to match format
     const matches = await Promise.all(pendingRequests.map(async (request) => {
       const wandererProfile = await Profile.findOne({ userId: request.wandererId });
+      const walkerProfile = await Profile.findOne({ userId: walkerId });
 
       return {
         id: request._id,
@@ -201,8 +268,8 @@ exports.getPendingRequests = async (req, res) => {
         distance: calculateDistance(
           request.latitude,
           request.longitude,
-          wandererProfile?.latitude ?? request.latitude,
-          wandererProfile?.longitude ?? request.longitude
+          walkerProfile?.latitude ?? request.latitude,
+          walkerProfile?.longitude ?? request.longitude
         ),
         status: 'PENDING'
       };
