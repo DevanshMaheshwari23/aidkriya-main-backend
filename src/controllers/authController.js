@@ -260,84 +260,35 @@ exports.getMe = async (req, res) => {
 };
 
 // @desc    Change password
-// @route   POST /api/auth/change-password
+// @route   PUT /api/auth/change-password
 // @access  Private
 exports.changePassword = async (req, res) => {
   try {
-    const { current_password_hash, new_password_hash } = req.body;
+    const { currentPassword, newPassword } = req.body;
 
-    if (!current_password_hash || !new_password_hash) {
-      return errorResponse(res, 400, 'Please provide current_password_hash and new_password_hash');
+    if (!currentPassword || !newPassword) {
+      return errorResponse(res, 400, 'Please provide current and new password');
     }
 
-    if (
-      typeof current_password_hash !== 'string' ||
-      typeof new_password_hash !== 'string' ||
-      current_password_hash.length !== 64 ||
-      new_password_hash.length !== 64
-    ) {
-      return errorResponse(res, 422, 'Password hashes must be 64-character hex strings');
+    if (newPassword.length < 6) {
+      return errorResponse(res, 400, 'New password must be at least 6 characters');
     }
 
     const user = await User.findById(req.user._id).select('+password');
-    if (!user) {
-      return errorResponse(res, 404, 'User not found');
-    }
 
-    const isMatch = user.comparePasswordHash(current_password_hash);
+    // Verify current password
+    const isMatch = await user.comparePassword(currentPassword);
     if (!isMatch) {
       return errorResponse(res, 401, 'Current password is incorrect');
     }
 
-    user.password = new_password_hash;
+    // Update password
+    user.password = newPassword;
     await user.save();
 
     successResponse(res, 200, 'Password changed successfully');
   } catch (error) {
     console.error('Change password error:', error);
     errorResponse(res, 500, 'Error changing password', error.message);
-  }
-};
-
-// @desc    Get email verification status
-// @route   GET /api/auth/email/verification-status
-// @access  Private
-exports.getEmailVerificationStatus = async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id).select('isVerified email');
-    if (!user) {
-      return errorResponse(res, 404, 'User not found');
-    }
-    successResponse(res, 200, 'Email verification status', {
-      verified: !!user.isVerified,
-      email: user.email
-    });
-  } catch (error) {
-    console.error('Get email verification status error:', error);
-    errorResponse(res, 500, 'Error fetching verification status', error.message);
-  }
-};
-
-// @desc    Toggle two-factor authentication
-// @route   POST /api/auth/twofactor
-// @access  Private
-exports.toggleTwoFactor = async (req, res) => {
-  try {
-    const { enable } = req.body;
-    if (typeof enable !== 'boolean') {
-      return errorResponse(res, 422, 'enable must be a boolean');
-    }
-    const user = await User.findById(req.user._id);
-    if (!user) {
-      return errorResponse(res, 404, 'User not found');
-    }
-    user.twoFactorEnabled = enable;
-    await user.save();
-    successResponse(res, 200, 'Two-factor authentication updated', {
-      twoFactorEnabled: user.twoFactorEnabled
-    });
-  } catch (error) {
-    console.error('Toggle two-factor error:', error);
-    errorResponse(res, 500, 'Error updating two-factor authentication', error.message);
   }
 };

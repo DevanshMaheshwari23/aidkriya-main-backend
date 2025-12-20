@@ -8,9 +8,7 @@ const {
   resendOTP,
   logout,
   getMe,
-  changePassword,
-  getEmailVerificationStatus,
-  toggleTwoFactor
+  changePassword
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 const { validate, validators } = require('../middleware/validation');
@@ -60,34 +58,16 @@ router.post('/logout', protect, logout);
 // @route   GET /api/auth/me
 router.get('/me', protect, getMe);
 
-// @route   POST /api/auth/change-password
-router.post(
+// @route   PUT /api/auth/change-password
+router.put(
   '/change-password',
   protect,
   [
-    body('current_password_hash')
-      .isLength({ min: 64, max: 64 }).withMessage('current_password_hash must be 64 chars')
-      .isHexadecimal().withMessage('current_password_hash must be hex'),
-    body('new_password_hash')
-      .isLength({ min: 64, max: 64 }).withMessage('new_password_hash must be 64 chars')
-      .isHexadecimal().withMessage('new_password_hash must be hex'),
+    body('currentPassword').notEmpty().withMessage('Current password is required'),
+    body('newPassword').custom(validators.isStrongPassword),
     validate
   ],
   changePassword
-);
-
-// @route   GET /api/auth/email/verification-status
-router.get('/email/verification-status', protect, getEmailVerificationStatus);
-
-// @route   POST /api/auth/twofactor
-router.post(
-  '/twofactor',
-  protect,
-  [
-    body('enable').isBoolean().withMessage('enable must be a boolean'),
-    validate
-  ],
-  toggleTwoFactor
 );
 
 module.exports = router;
