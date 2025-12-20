@@ -243,7 +243,7 @@ exports.getTransactionHistory = async (req, res) => {
 
     const skip = (page - 1) * limit;
 
-    const [payments, payouts, totalPayments, totalPayouts] = await Promise.all([
+  const [payments, payouts, totalPayments, totalPayouts] = await Promise.all([
       Payment.find({
         $or: [{ wandererId: userId }, { walkerId: userId }],
         status: 'SUCCESS'
@@ -251,7 +251,9 @@ exports.getTransactionHistory = async (req, res) => {
         .sort({ completedAt: -1 })
         .skip(skip)
         .limit(parseInt(limit))
-        .populate('walkSessionId'),
+        .populate('walkSessionId')
+        .populate('wandererId', 'name')
+        .populate('walkerId', 'name'),
       Payout.find({
         userId,
         status: 'SUCCESS'
@@ -283,7 +285,10 @@ exports.getTransactionHistory = async (req, res) => {
           : `Earnings from walk session`,
         timestamp: payment.completedAt,
         reference_id: payment._id,
-        status: payment.status
+        status: payment.status,
+        counterparty: isWanderer
+          ? (payment.walkerId?.name || 'Walker')
+          : (payment.wandererId?.name || 'Wanderer')
       };
     });
     const payoutTxns = payouts.map(p => ({
@@ -294,7 +299,8 @@ exports.getTransactionHistory = async (req, res) => {
       description: p.method === 'UPI' ? `Withdrawal to UPI ${p.upiId}` : `Withdrawal to bank ${p.accountNumber}`,
       timestamp: p.completedAt || p.createdAt,
       reference_id: p.externalReferenceId || p._id,
-      status: p.status
+      status: p.status,
+      counterparty: p.beneficiaryName || 'Self'
     }));
     const formattedTransactions = [...paymentTxns, ...payoutTxns].sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
@@ -398,7 +404,6 @@ exports.withdrawFromWallet = async (req, res) => {
     if (!amount || amount <= 0) {
       return errorResponse(res, 400, 'Invalid amount');
     }
-    // Enforce minimum withdraw threshold from env (default ₹100)
     const minWithdraw = parseFloat(process.env.MIN_WITHDRAW_AMOUNT || '100');
     if (parseFloat(amount) < minWithdraw) {
       return errorResponse(
@@ -425,7 +430,6 @@ exports.withdrawFromWallet = async (req, res) => {
       return errorResponse(res, 400, 'Insufficient wallet balance');
     }
 
-    // Create payout record (start as PENDING; escalate to SUCCESS when processed)
     const payout = await Payout.create({
       userId: user_id,
       amount: parseFloat(amount),
@@ -438,24 +442,21 @@ exports.withdrawFromWallet = async (req, res) => {
       createdAt: new Date()
     });
 
-    // Attempt real-time payout via RazorpayX if enabled and configured
     const payoutsEnabled =
       (process.env.RAZORPAY_PAYOUTS_ENABLED || '').toLowerCase() === 'true';
     const keyId = process.env.RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
-    const rpxAccountNumber = process.env.RAZORPAYX_ACCOUNT_NUMBER; // Needed for RazorpayX payouts
+    const rpxAccountNumber = process.env.RAZORPAYX_ACCOUNT_NUMBER;
 
     try {
       if (payoutsEnabled && keyId && keySecret && rpxAccountNumber) {
-        // Prepare payout payload
         const payoutPayload = {
           account_number: rpxAccountNumber,
-          amount: Math.round(parseFloat(amount) * 100), // in paise
+          amount: Math.round(parseFloat(amount) * 100),
           currency: 'INR',
           mode: method === 'UPI' ? 'UPI' : 'IMPS',
           purpose: 'payout',
           queue_if_low_balance: true,
-          // Create fund account inline (RazorpayX supports inline fund_account)
           fund_account: method === 'UPI'
             ? {
                 account_type: 'vpa',
@@ -481,7 +482,6 @@ exports.withdrawFromWallet = async (req, res) => {
                   type: 'employee',
                 },
               },
-          // Notes for reconciliation
           notes: {
             user_id,
             payout_id: payout._id.toString(),
@@ -489,7 +489,6 @@ exports.withdrawFromWallet = async (req, res) => {
           }
         };
 
-        // Perform HTTP request to RazorpayX Payouts API via basic auth
         const authHeader =
           'Basic ' + Buffer.from(`${keyId}:${keySecret}`).toString('base64');
 
@@ -546,11 +545,9 @@ exports.withdrawFromWallet = async (req, res) => {
           payout.completedAt = payout.status === 'SUCCESS' ? new Date() : undefined;
           await payout.save();
         } else {
-          // If payout API failed, keep as PENDING and include error
           console.error('RazorpayX payout failure:', result);
         }
       } else {
-        // Payouts not enabled/configured: mark as SUCCESS to simulate instant transfer
         payout.status = 'SUCCESS';
         payout.externalReferenceId = `SIMULATED_${Date.now()}`;
         payout.completedAt = new Date();
@@ -558,10 +555,8 @@ exports.withdrawFromWallet = async (req, res) => {
       }
     } catch (payoutErr) {
       console.error('Payout processing error:', payoutErr);
-      // Leave payout as PENDING; can be retried by ops/admin later
     }
 
-    // Deduct from wallet and persist
     profile.walletBalance -= parseFloat(amount);
     await profile.save();
 
