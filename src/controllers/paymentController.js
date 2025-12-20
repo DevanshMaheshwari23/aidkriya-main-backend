@@ -2,6 +2,8 @@ const Payment = require('../models/Payment');
 const WalkSession = require('../models/WalkSession');
 const WalkRequest = require('../models/WalkRequest');
 const Profile = require('../models/Profile');
+const Withdrawal = require('../models/Withdrawal');
+const BankAccount = require('../models/BankAccount');
 const razorpay = require('../config/razorpay');
 const { successResponse, errorResponse } = require('../utils/responseHelper');
 const { calculateFare, verifyRazorpaySignature } = require('../utils/paymentHelpers');
@@ -15,7 +17,7 @@ exports.createPaymentOrder = async (req, res) => {
     const { walk_session_id } = req.body;
 
     // Ensure Razorpay credentials are configured
-    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET || !razorpay) {
       return errorResponse(res, 500, 'Payment gateway not configured');
     }
 
@@ -359,5 +361,83 @@ exports.getWalletBalance = async (req, res) => {
   } catch (error) {
     console.error('Get wallet balance error:', error);
     errorResponse(res, 500, 'Error fetching wallet balance', error.message);
+  }
+};
+
+// @desc    Request withdrawal
+// @route   POST /api/payment/withdraw
+// @access  Private
+exports.requestWithdrawal = async (req, res) => {
+  try {
+    const { amount } = req.body;
+    if (!amount || amount <= 0) {
+      return errorResponse(res, 400, 'Invalid amount');
+    }
+    const profile = await Profile.findOne({ userId: req.user._id });
+    if (!profile) return errorResponse(res, 404, 'Profile not found');
+    if ((profile.walletBalance || 0) < amount) {
+      return errorResponse(res, 400, 'Insufficient wallet balance');
+    }
+    profile.walletBalance -= amount;
+    await profile.save();
+    const withdrawal = await Withdrawal.create({
+      userId: req.user._id,
+      amount,
+      status: 'PROCESSING'
+    });
+    successResponse(res, 200, 'Withdrawal requested', { withdrawal });
+  } catch (error) {
+    console.error('Request withdrawal error:', error);
+    errorResponse(res, 500, 'Error requesting withdrawal', error.message);
+  }
+};
+
+// @desc    Get withdrawals
+// @route   GET /api/earnings/withdrawals
+// @access  Private
+exports.getWithdrawals = async (req, res) => {
+  try {
+    const withdrawals = await Withdrawal.find({ userId: req.user._id }).sort({ createdAt: -1 });
+    successResponse(res, 200, 'Withdrawals retrieved', { withdrawals });
+  } catch (error) {
+    console.error('Get withdrawals error:', error);
+    errorResponse(res, 500, 'Error fetching withdrawals', error.message);
+  }
+};
+
+// @desc    Add bank account
+// @route   POST /api/payment/bank-accounts
+// @access  Private
+exports.addBankAccount = async (req, res) => {
+  try {
+    const { holderName, bankName, accountNumber, ifsc } = req.body;
+    if (!holderName || !bankName || !accountNumber || !ifsc) {
+      return errorResponse(res, 400, 'All fields are required');
+    }
+    const acct = await BankAccount.create({
+      userId: req.user._id,
+      holderName,
+      bankName,
+      accountNumberLast4: String(accountNumber).slice(-4),
+      ifsc,
+      verified: true
+    });
+    successResponse(res, 201, 'Bank account added', { account: acct });
+  } catch (error) {
+    console.error('Add bank account error:', error);
+    errorResponse(res, 500, 'Error adding bank account', error.message);
+  }
+};
+
+// @desc    List bank accounts
+// @route   GET /api/payment/bank-accounts
+// @access  Private
+exports.listBankAccounts = async (req, res) => {
+  try {
+    const accounts = await BankAccount.find({ userId: req.user._id }).sort({ createdAt: -1 });
+    successResponse(res, 200, 'Bank accounts retrieved', { accounts });
+  } catch (error) {
+    console.error('List bank accounts error:', error);
+    errorResponse(res, 500, 'Error fetching bank accounts', error.message);
   }
 };

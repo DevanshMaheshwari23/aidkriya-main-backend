@@ -7,7 +7,11 @@ const {
   getTransactionHistory,
   getPaymentDetails,
   addToWallet,
-  getWalletBalance
+  getWalletBalance,
+  requestWithdrawal,
+  getWithdrawals,
+  addBankAccount,
+  listBankAccounts
 } = require('../controllers/paymentController');
 const { protect } = require('../middleware/auth');
 const { validate } = require('../middleware/validation');
@@ -78,5 +82,33 @@ router.post(
 
 // @route   GET /api/payment/wallet/:userId
 router.get('/wallet/:userId', protect, getWalletBalance);
+
+// @route   POST /api/payment/withdraw
+router.post(
+  '/withdraw',
+  protect,
+  [body('amount').isFloat({ min: 1 }).withMessage('Amount must be greater than 0'), validate],
+  requestWithdrawal
+);
+
+// @route   GET /api/earnings/withdrawals
+router.get('/withdrawals', protect, getWithdrawals);
+
+// @route   POST /api/payment/bank-accounts
+router.post(
+  '/bank-accounts',
+  protect,
+  [
+    body('holderName').notEmpty().withMessage('Holder name required'),
+    body('bankName').notEmpty().withMessage('Bank name required'),
+    body('accountNumber').isLength({ min: 6 }).withMessage('Account number invalid'),
+    body('ifsc').isLength({ min: 8 }).withMessage('IFSC invalid'),
+    validate
+  ],
+  addBankAccount
+);
+
+// @route   GET /api/payment/bank-accounts
+router.get('/bank-accounts', protect, listBankAccounts);
 
 module.exports = router;
