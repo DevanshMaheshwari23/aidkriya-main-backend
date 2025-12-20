@@ -7,7 +7,8 @@ const {
   getTransactionHistory,
   getPaymentDetails,
   addToWallet,
-  getWalletBalance
+  getWalletBalance,
+  withdrawFromWallet
 } = require('../controllers/paymentController');
 const { protect } = require('../middleware/auth');
 const { validate } = require('../middleware/validation');
@@ -78,5 +79,18 @@ router.post(
 
 // @route   GET /api/payment/wallet/:userId
 router.get('/wallet/:userId', protect, getWalletBalance);
+
+// @route   POST /api/payment/withdraw
+router.post(
+  '/withdraw',
+  protect,
+  [
+    body('user_id').notEmpty().withMessage('User ID is required'),
+    body('amount').isFloat({ min: 1 }).withMessage('Amount must be greater than 0'),
+    body('method').isIn(['BANK', 'UPI']).withMessage('Method must be BANK or UPI'),
+    validate
+  ],
+  withdrawFromWallet
+);
 
 module.exports = router;

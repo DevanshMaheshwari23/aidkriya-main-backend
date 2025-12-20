@@ -2,6 +2,7 @@ const Payment = require('../models/Payment');
 const WalkSession = require('../models/WalkSession');
 const WalkRequest = require('../models/WalkRequest');
 const Profile = require('../models/Profile');
+const Payout = require('../models/Payout');
 const razorpay = require('../config/razorpay');
 const { successResponse, errorResponse } = require('../utils/responseHelper');
 const { calculateFare, verifyRazorpaySignature } = require('../utils/paymentHelpers');
@@ -241,7 +242,7 @@ exports.getTransactionHistory = async (req, res) => {
 
     const skip = (page - 1) * limit;
 
-    const [transactions, total] = await Promise.all([
+    const [payments, payouts, totalPayments, totalPayouts] = await Promise.all([
       Payment.find({
         $or: [{ wandererId: userId }, { walkerId: userId }],
         status: 'SUCCESS'
@@ -250,14 +251,25 @@ exports.getTransactionHistory = async (req, res) => {
         .skip(skip)
         .limit(parseInt(limit))
         .populate('walkSessionId'),
+      Payout.find({
+        userId,
+        status: 'SUCCESS'
+      })
+        .sort({ completedAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit)),
       Payment.countDocuments({
         $or: [{ wandererId: userId }, { walkerId: userId }],
         status: 'SUCCESS'
-      })
+      }),
+      Payout.countDocuments({
+        userId,
+        status: 'SUCCESS'
+      }),
     ]);
 
     // Transform to transaction format
-    const formattedTransactions = transactions.map(payment => {
+    const paymentTxns = payments.map(payment => {
       const isWanderer = payment.wandererId.toString() === userId;
       
       return {
@@ -273,13 +285,26 @@ exports.getTransactionHistory = async (req, res) => {
         status: payment.status
       };
     });
+    const payoutTxns = payouts.map(p => ({
+      id: p._id,
+      user_id: userId,
+      type: 'WALLET_DEBIT',
+      amount: p.amount,
+      description: p.method === 'UPI' ? `Withdrawal to UPI ${p.upiId}` : `Withdrawal to bank ${p.accountNumber}`,
+      timestamp: p.completedAt || p.createdAt,
+      reference_id: p.externalReferenceId || p._id,
+      status: p.status
+    }));
+    const formattedTransactions = [...paymentTxns, ...payoutTxns].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
 
     successResponse(res, 200, 'Transaction history retrieved', {
       transactions: formattedTransactions,
       pagination: {
         currentPage: parseInt(page),
-        totalPages: Math.ceil(total / limit),
-        totalItems: total
+        totalPages: Math.ceil((totalPayments + totalPayouts) / limit),
+        totalItems: totalPayments + totalPayouts
       }
     });
   } catch (error) {
@@ -359,5 +384,58 @@ exports.getWalletBalance = async (req, res) => {
   } catch (error) {
     console.error('Get wallet balance error:', error);
     errorResponse(res, 500, 'Error fetching wallet balance', error.message);
+  }
+};
+
+// @desc    Withdraw money from wallet to bank/UPI
+// @route   POST /api/payment/withdraw
+// @access  Private
+exports.withdrawFromWallet = async (req, res) => {
+  try {
+    const { user_id, amount, method, beneficiary_name, account_number, ifsc, upi_id } = req.body;
+
+    if (!amount || amount <= 0) {
+      return errorResponse(res, 400, 'Invalid amount');
+    }
+    if (!method || !['BANK', 'UPI'].includes(method)) {
+      return errorResponse(res, 400, 'Invalid method');
+    }
+    if (method === 'UPI' && (!upi_id || upi_id.length < 6)) {
+      return errorResponse(res, 400, 'Invalid UPI ID');
+    }
+    if (method === 'BANK' && (!account_number || !ifsc)) {
+      return errorResponse(res, 400, 'Bank details required');
+    }
+
+    const profile = await Profile.findOne({ userId: user_id });
+    if (!profile) {
+      return errorResponse(res, 404, 'Profile not found');
+    }
+    if ((profile.walletBalance || 0) < parseFloat(amount)) {
+      return errorResponse(res, 400, 'Insufficient wallet balance');
+    }
+
+    const payout = await Payout.create({
+      userId: user_id,
+      amount: parseFloat(amount),
+      method,
+      beneficiaryName: beneficiary_name,
+      accountNumber: account_number,
+      ifsc,
+      upiId: upi_id,
+      status: 'SUCCESS',
+      completedAt: new Date()
+    });
+
+    profile.walletBalance -= parseFloat(amount);
+    await profile.save();
+
+    successResponse(res, 200, 'Withdrawal successful', {
+      wallet_balance: profile.walletBalance,
+      payout_id: payout._id
+    });
+  } catch (error) {
+    console.error('Withdraw from wallet error:', error);
+    errorResponse(res, 500, 'Error processing withdrawal', error.message);
   }
 };
