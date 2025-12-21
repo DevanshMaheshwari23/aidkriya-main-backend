@@ -59,6 +59,10 @@ const userSchema = new mongoose.Schema({
   updatedAt: {
     type: Date,
     default: Date.now
+  },
+  profileImageFileId: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null
   }
 }, {
   timestamps: true

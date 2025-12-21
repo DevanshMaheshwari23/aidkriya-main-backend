@@ -63,6 +63,7 @@ app.use('/api/payment', require('./routes/payment'));
 app.use('/api/rating', require('./routes/rating'));
 app.use('/api/feedback', require('./routes/feedback'));
 app.use('/api/notifications', require('./routes/notification'));
+app.use('/api/files', require('./routes/files'));
 
 // Convenience aliases without /api prefix to support existing Flutter calls
 // e.g. Flutter hitting /auth/login instead of /api/auth/login
@@ -75,6 +76,7 @@ app.use('/payment', require('./routes/payment'));
 app.use('/rating', require('./routes/rating'));
 app.use('/feedback', require('./routes/feedback'));
 app.use('/notifications', require('./routes/notification'));
+app.use('/files', require('./routes/files'));
 
 // Error handlers (must be last)
 app.use(notFound);

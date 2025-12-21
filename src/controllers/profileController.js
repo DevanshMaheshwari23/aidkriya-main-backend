@@ -1,6 +1,8 @@
 const Profile = require('../models/Profile');
 const User = require('../models/User');
 const { successResponse, errorResponse } = require('../utils/responseHelper');
+const mongoose = require('mongoose');
+const { GridFSBucket, ObjectId } = require('mongodb');
 
 const isValidHttpUrl = (url) => {
   try {
@@ -26,7 +28,17 @@ exports.getProfile = async (req, res) => {
       return errorResponse(res, 404, 'Profile not found');
     }
 
-    successResponse(res, 200, 'Profile retrieved successfully', { profile });
+    // Augment profile image based on GridFS file id stored on user
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const userDoc = await User.findById(profile.userId._id || profile.userId).select('profileImageFileId');
+    const fileId = userDoc?.profileImageFileId;
+    const payload = profile.toObject();
+    if (fileId) {
+      payload.hasCustomProfileImage = true;
+      payload.profileImage = `${baseUrl}/api/files/${fileId.toString()}`;
+    }
+
+    successResponse(res, 200, 'Profile retrieved successfully', { profile: payload });
   } catch (error) {
     console.error('Get profile error:', error);
     errorResponse(res, 500, 'Error fetching profile', error.message);
@@ -113,6 +125,45 @@ exports.setupProfile = async (req, res) => {
   } catch (error) {
     console.error('Setup profile error:', error);
     errorResponse(res, 500, 'Error setting up profile', error.message);
+  }
+};
+
+// @desc    Upload profile image file to GridFS and save fileId on user
+// @route   POST /api/profile/image
+// @access  Private
+exports.uploadProfileImageFile = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    if (!req.file || !req.file.id) {
+      return errorResponse(res, 400, 'No file uploaded');
+    }
+
+    // Save new fileId on user and optionally remove previous file
+    const user = await User.findById(userId).select('profileImageFileId');
+    const oldFileId = user?.profileImageFileId;
+    user.profileImageFileId = req.file.id;
+    await user.save();
+
+    // Optional cleanup of previous image
+    if (oldFileId) {
+      try {
+        const bucket = new GridFSBucket(mongoose.connection.db, { bucketName: 'profileImages' });
+        await bucket.delete(new ObjectId(oldFileId));
+      } catch (e) {
+        console.warn('⚠️ Failed to delete old profile image:', e.message);
+      }
+    }
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const profileImageUrl = `${baseUrl}/api/files/${req.file.id.toString()}`;
+
+    return successResponse(res, 201, 'Profile image uploaded', {
+      fileId: req.file.id.toString(),
+      profileImageUrl,
+    });
+  } catch (error) {
+    console.error('Upload profile image error:', error);
+    return errorResponse(res, 500, 'Error uploading image', error.message);
   }
 };
 

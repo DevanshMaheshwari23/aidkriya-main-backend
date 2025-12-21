@@ -11,6 +11,8 @@ const {
 } = require('../controllers/profileController');
 const { protect, authorize } = require('../middleware/auth');
 const { validate } = require('../middleware/validation');
+const { upload } = require('../config/gridfs');
+const { uploadProfileImageFile } = require('../controllers/profileController');
 
 // @route   GET /api/profile/:userId
 router.get('/:userId', getProfile);
@@ -31,6 +33,15 @@ router.put(
     validate
   ],
   setupProfile
+);
+
+// @route   POST /api/profile/image
+// @access  Private
+router.post(
+  '/image',
+  protect,
+  upload.single('image'),
+  uploadProfileImageFile
 );
 
 // @route   POST /api/profile/verification
