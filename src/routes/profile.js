@@ -11,7 +11,7 @@ const {
 } = require('../controllers/profileController');
 const { protect, authorize } = require('../middleware/auth');
 const { validate } = require('../middleware/validation');
-const { upload } = require('../config/gridfs');
+const multer = require('multer');
 const { uploadProfileImageFile } = require('../controllers/profileController');
 
 // @route   GET /api/profile/:userId
@@ -37,12 +37,12 @@ router.put(
 
 // @route   POST /api/profile/image
 // @access  Private
-router.post(
-  '/image',
-  protect,
-  upload.single('image'),
-  uploadProfileImageFile
-);
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+router.post('/image', protect, upload.single('image'), uploadProfileImageFile);
 
 // @route   POST /api/profile/verification
 router.post(

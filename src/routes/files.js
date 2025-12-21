@@ -21,7 +21,7 @@ router.get('/:id', async (req, res) => {
 
     res.set('Content-Type', file.contentType || (file.metadata && file.metadata.mimetype) || 'application/octet-stream');
     res.set('Content-Disposition', `inline; filename="${file.filename}"`);
-    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    res.set('Cache-Control', 'public, max-age=31536000');
 
     const downloadStream = bucket.openDownloadStream(_id);
     downloadStream.on('error', () => {
@@ -35,4 +35,3 @@ router.get('/:id', async (req, res) => {
 });
 
 module.exports = router;
-

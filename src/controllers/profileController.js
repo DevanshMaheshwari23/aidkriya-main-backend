@@ -134,35 +134,45 @@ exports.setupProfile = async (req, res) => {
 exports.uploadProfileImageFile = async (req, res) => {
   try {
     const userId = req.user._id;
-    if (!req.file || !req.file.id) {
+    if (!req.file || !req.file.buffer) {
       return errorResponse(res, 400, 'No file uploaded');
     }
 
-    // Save new fileId on user and optionally remove previous file
+    const bucket = new GridFSBucket(mongoose.connection.db, { bucketName: 'profileImages' });
+    const filename = `profile_${userId}_${Date.now()}`;
+    const uploadStream = bucket.openUploadStream(filename, {
+      contentType: req.file.mimetype,
+      metadata: {
+        userId: userId.toString(),
+        mimetype: req.file.mimetype,
+      },
+    });
+
+    await new Promise((resolve, reject) => {
+      uploadStream.on('error', reject);
+      uploadStream.on('finish', resolve);
+      uploadStream.end(req.file.buffer);
+    });
+
     const user = await User.findById(userId).select('profileImageFileId');
     const oldFileId = user?.profileImageFileId;
-    user.profileImageFileId = req.file.id;
+    user.profileImageFileId = uploadStream.id;
     await user.save();
 
-    // Optional cleanup of previous image
     if (oldFileId) {
       try {
-        const bucket = new GridFSBucket(mongoose.connection.db, { bucketName: 'profileImages' });
         await bucket.delete(new ObjectId(oldFileId));
-      } catch (e) {
-        console.warn('⚠️ Failed to delete old profile image:', e.message);
-      }
+      } catch (_) {}
     }
 
     const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const profileImageUrl = `${baseUrl}/api/files/${req.file.id.toString()}`;
+    const profileImageUrl = `${baseUrl}/api/files/${uploadStream.id.toString()}`;
 
     return successResponse(res, 201, 'Profile image uploaded', {
-      fileId: req.file.id.toString(),
+      fileId: uploadStream.id.toString(),
       profileImageUrl,
     });
   } catch (error) {
-    console.error('Upload profile image error:', error);
     return errorResponse(res, 500, 'Error uploading image', error.message);
   }
 };
