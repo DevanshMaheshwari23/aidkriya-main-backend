@@ -5,6 +5,12 @@ const Feedback = require('../models/Feedback');
 const { successResponse, errorResponse } = require('../utils/responseHelper');
 const { sendNotification, notificationTemplates } = require('../utils/notificationHelper');
 
+const safeImage = (url) => {
+  const val = String(url || '');
+  if (!val) return '';
+  return /ui-avatars\.com/i.test(val) ? '' : val;
+};
+
 // @desc    Submit rating
 // @route   POST /api/rating/submit
 // @access  Private
@@ -123,7 +129,7 @@ exports.getUserRatings = async (req, res) => {
           id: rating._id,
           reviewer_id: rating.reviewerId._id,
           reviewer_name: reviewerProfile?.name || 'Anonymous',
-          reviewer_image: reviewerProfile?.profileImage || '',
+          reviewer_image: safeImage(reviewerProfile?.profileImage || ''),
           rating: rating.rating,
           review_text: rating.reviewText || '',
           tags: rating.tags || [],

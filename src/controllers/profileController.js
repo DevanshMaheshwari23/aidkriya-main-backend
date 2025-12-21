@@ -2,6 +2,17 @@ const Profile = require('../models/Profile');
 const User = require('../models/User');
 const { successResponse, errorResponse } = require('../utils/responseHelper');
 
+const isValidHttpUrl = (url) => {
+  try {
+    const u = new URL(String(url));
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+};
+
+const isPlaceholderUrl = (url) => /ui-avatars\.com/i.test(String(url));
+
 // @desc    Get user profile
 // @route   GET /api/profile/:userId
 // @access  Public
@@ -47,7 +58,14 @@ exports.setupProfile = async (req, res) => {
       if (name) profile.name = name;
       if (bio) profile.bio = bio;
       if (age) profile.age = age;
-      if (profileImage) profile.profileImage = profileImage;
+      if (typeof profileImage === 'string' && profileImage.trim().length > 0) {
+        const shouldUpdateImage =
+          isValidHttpUrl(profileImage) && !isPlaceholderUrl(profileImage);
+        if (shouldUpdateImage) {
+          profile.profileImage = profileImage;
+          profile.hasCustomProfileImage = true;
+        }
+      }
       if (additionalImages) profile.additionalImages = additionalImages;
       if (preferences) {
         profile.preferences = {
@@ -62,18 +80,28 @@ exports.setupProfile = async (req, res) => {
       await profile.save();
     } else {
       // Create new profile
-      profile = await Profile.create({
+      const payload = {
         userId,
         name: name || req.user.name,
         bio,
         age,
-        profileImage,
         additionalImages,
         preferences,
         latitude,
         longitude,
         locationUpdatedAt: latitude !== undefined || longitude !== undefined ? new Date() : undefined
-      });
+      };
+      if (typeof profileImage === 'string' && profileImage.trim().length > 0) {
+        const shouldUse =
+          isValidHttpUrl(profileImage) && !isPlaceholderUrl(profileImage);
+        if (shouldUse) {
+          payload.profileImage = profileImage;
+          payload.hasCustomProfileImage = true;
+        } else {
+          payload.hasCustomProfileImage = false;
+        }
+      }
+      profile = await Profile.create(payload);
     }
 
     // Update user name if provided

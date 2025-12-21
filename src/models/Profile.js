@@ -33,6 +33,10 @@ const profileSchema = new mongoose.Schema({
     type: String,
     default: 'https://via.placeholder.com/150'
   },
+  hasCustomProfileImage: {
+    type: Boolean,
+    default: false
+  },
   additionalImages: [{
     type: String
   }],

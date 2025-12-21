@@ -4,6 +4,12 @@ const { successResponse, errorResponse } = require('../utils/responseHelper');
 const { sendNotification, notificationTemplates } = require('../utils/notificationHelper');
 const { calculateDistance } = require('../utils/calculateDistance');
 
+const safeImage = (url) => {
+  const val = String(url || '');
+  if (!val) return '';
+  return /ui-avatars\.com/i.test(val) ? '' : val;
+};
+
 // @desc    Find available walkers for a walk request
 // @route   POST /api/matching/find-walkers
 // @access  Private (Wanderer only)
@@ -57,7 +63,7 @@ exports.findWalkers = async (req, res) => {
           walk_request_id,
           walker_id: profile.userId._id,
           walker_name: profile.userId.name,
-          walker_image: profile.profileImage,
+          walker_image: safeImage(profile.profileImage),
           walker_rating: profile.rating,
           total_walks: profile.totalWalks,
           distance: parseFloat(distance.toFixed(2)),
@@ -262,7 +268,7 @@ exports.getPendingRequests = async (req, res) => {
         walk_request_id: request._id,
         walker_id: walkerId,
         walker_name: wandererProfile?.name || request.wandererId.name,
-        walker_image: wandererProfile?.profileImage || '',
+        walker_image: safeImage(wandererProfile?.profileImage || ''),
         walker_rating: wandererProfile?.rating || 0,
         total_walks: wandererProfile?.totalWalks || 0,
         distance: calculateDistance(
