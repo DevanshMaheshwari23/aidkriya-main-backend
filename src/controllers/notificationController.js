@@ -1,4 +1,5 @@
 const Notification = require('../models/Notification');
+const server = require('../server');
 const { successResponse, errorResponse } = require('../utils/responseHelper');
 
 // @desc    Create notification (internal use)
@@ -33,6 +34,16 @@ exports.createNotification = async (req, res) => {
       imageUrl,
       expiresAt
     });
+
+    try {
+      const unreadCount = await Notification.getUnreadCount(userId);
+      if (server && server.io) {
+        server.io.to(`user:${userId}`).emit('notifications:new', {
+          notification,
+          unreadCount
+        });
+      }
+    } catch (_) {}
 
     successResponse(res, 201, 'Notification created successfully', {
       notification
@@ -121,6 +132,16 @@ exports.markAsRead = async (req, res) => {
 
     await notification.markAsRead();
 
+    try {
+      const unreadCount = await Notification.getUnreadCount(notification.userId);
+      if (server && server.io) {
+        server.io.to(`user:${notification.userId}`).emit('notifications:read', {
+          notificationId,
+          unreadCount
+        });
+      }
+    } catch (_) {}
+
     successResponse(res, 200, 'Notification marked as read', {
       notification
     });
@@ -143,6 +164,16 @@ exports.markAllAsRead = async (req, res) => {
     }
 
     const result = await Notification.markAllAsRead(userId);
+
+    try {
+      const unreadCount = await Notification.getUnreadCount(userId);
+      if (server && server.io) {
+        server.io.to(`user:${userId}`).emit('notifications:mark-all-read', {
+          unreadCount,
+          modifiedCount: result.modifiedCount
+        });
+      }
+    } catch (_) {}
 
     successResponse(res, 200, 'All notifications marked as read', {
       modifiedCount: result.modifiedCount
@@ -173,6 +204,16 @@ exports.deleteNotification = async (req, res) => {
 
     await notification.deleteOne();
 
+    try {
+      const unreadCount = await Notification.getUnreadCount(notification.userId);
+      if (server && server.io) {
+        server.io.to(`user:${notification.userId}`).emit('notifications:delete', {
+          notificationId,
+          unreadCount
+        });
+      }
+    } catch (_) {}
+
     successResponse(res, 200, 'Notification deleted successfully');
   } catch (error) {
     console.error('Delete notification error:', error);
@@ -193,6 +234,16 @@ exports.deleteAllNotifications = async (req, res) => {
     }
 
     const result = await Notification.deleteMany({ userId });
+
+    try {
+      const unreadCount = await Notification.getUnreadCount(userId);
+      if (server && server.io) {
+        server.io.to(`user:${userId}`).emit('notifications:delete-all', {
+          unreadCount,
+          deletedCount: result.deletedCount
+        });
+      }
+    } catch (_) {}
 
     successResponse(res, 200, 'All notifications deleted', {
       deletedCount: result.deletedCount

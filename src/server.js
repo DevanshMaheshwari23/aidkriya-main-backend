@@ -142,6 +142,11 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.userId);
   
+  // Join user-specific room for notifications
+  try {
+    socket.join(`user:${socket.userId}`);
+  } catch (e) {}
+  
   // Join tracking session room
   socket.on('tracking:join', ({ sessionId }) => {
     socket.join(`session:${sessionId}`);
@@ -202,3 +207,4 @@ io.on('connection', (socket) => {
 });
 
 module.exports = server;
+module.exports.io = io;

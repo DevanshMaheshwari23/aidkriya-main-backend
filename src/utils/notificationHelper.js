@@ -1,4 +1,5 @@
 const Notification = require('../models/Notification');
+const server = require('../server');
 
 const dispatchPushNotification = async (userId, title, message, data = {}) => {
   // Placeholder for FCM or any other push provider
@@ -48,6 +49,16 @@ const sendNotification = async (
       deliveryStatus: dispatchResult.success ? 'SENT' : 'FAILED',
       sentAt: dispatchResult.success ? new Date() : undefined
     });
+
+    try {
+      const unreadCount = await Notification.getUnreadCount(userId);
+      if (server && server.io) {
+        server.io.to(`user:${userId}`).emit('notifications:new', {
+          notification,
+          unreadCount
+        });
+      }
+    } catch (_) {}
 
     return { success: true, notification };
   } catch (error) {
