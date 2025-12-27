@@ -5,6 +5,7 @@ const WalkRequest = require('../models/WalkRequest');
 const Payment = require('../models/Payment');
 const Payout = require('../models/Payout');
 const { successResponse, errorResponse, getPaginationData } = require('../utils/responseHelper');
+const { sendNotification, notificationTemplates } = require('../utils/notificationHelper');
 
 exports.getSummary = async (req, res) => {
   try {
@@ -70,6 +71,7 @@ exports.listSOSAlerts = async (req, res) => {
 exports.resolveSOS = async (req, res) => {
   try {
     const { sessionId } = req.params;
+    const { notes } = req.body || {};
     const session = await WalkSession.findById(sessionId);
     if (!session) {
       return errorResponse(res, 404, 'Walk session not found');
@@ -79,6 +81,9 @@ exports.resolveSOS = async (req, res) => {
     }
     session.sosResolved = true;
     session.sosResolvedAt = new Date();
+    if (typeof notes !== 'undefined') {
+      session.sosResolvedNotes = String(notes);
+    }
     await session.save();
 
     successResponse(res, 200, 'SOS resolved', { sessionId: session._id, resolvedAt: session.sosResolvedAt });
@@ -222,5 +227,117 @@ exports.listSessions = async (req, res) => {
     });
   } catch (error) {
     errorResponse(res, 500, 'Error fetching sessions', error.message);
+  }
+};
+
+exports.getSessionDetail = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await WalkSession.findById(sessionId)
+      .populate('wandererId', 'name email phone')
+      .populate('walkerId', 'name email phone')
+      .populate('walkRequestId');
+    if (!session) {
+      return errorResponse(res, 404, 'Session not found');
+    }
+    successResponse(res, 200, 'Session detail', { session });
+  } catch (error) {
+    errorResponse(res, 500, 'Error fetching session detail', error.message);
+  }
+};
+
+exports.searchUsers = async (req, res) => {
+  try {
+    const { q = '', page = 1, limit = 20, role } = req.query;
+    const regex = new RegExp(String(q), 'i');
+    const match = {
+      $or: [{ name: regex }, { email: regex }, { phone: regex }]
+    };
+    if (role) {
+      match.role = String(role).toUpperCase();
+    }
+    const total = await User.countDocuments(match);
+    const { skip, itemsPerPage, totalPages } = getPaginationData(page, limit, total);
+    const users = await User.find(match)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(itemsPerPage)
+      .select('name email phone role isActive createdAt');
+    const profiles = await Profile.find({ userId: { $in: users.map(u => u._id) } });
+    const profileByUser = Object.fromEntries(profiles.map(p => [String(p.userId), p]));
+    const items = users.map(u => ({
+      user: u,
+      profile: profileByUser[String(u._id)] || null
+    }));
+    successResponse(res, 200, 'Users', {
+      items,
+      pagination: { page: Number(page), totalPages, totalItems: total }
+    });
+  } catch (error) {
+    errorResponse(res, 500, 'Error searching users', error.message);
+  }
+};
+
+exports.getUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId).select('-password');
+    if (!user) {
+      return errorResponse(res, 404, 'User not found');
+    }
+    const profile = await Profile.findOne({ userId });
+    successResponse(res, 200, 'User', { user, profile });
+  } catch (error) {
+    errorResponse(res, 500, 'Error fetching user', error.message);
+  }
+};
+
+exports.updateUserStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { isActive } = req.body;
+    const user = await User.findById(userId);
+    if (!user) {
+      return errorResponse(res, 404, 'User not found');
+    }
+    user.isActive = Boolean(isActive);
+    await user.save();
+    successResponse(res, 200, 'User status updated', { userId, isActive: user.isActive });
+  } catch (error) {
+    errorResponse(res, 500, 'Error updating user status', error.message);
+  }
+};
+
+exports.notifyUser = async (req, res) => {
+  try {
+    const { userId, title, message, type = 'SYSTEM' } = req.body;
+    const result = await sendNotification(userId, title, message, {}, { type });
+    if (!result.success) {
+      return errorResponse(res, 500, 'Notification failed', result.error);
+    }
+    successResponse(res, 200, 'Notification sent', { notificationId: result.notification._id });
+  } catch (error) {
+    errorResponse(res, 500, 'Error sending notification', error.message);
+  }
+};
+
+exports.updateWalkerAvailability = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { isAvailable, manualBusy } = req.body;
+    const profile = await Profile.findOne({ userId });
+    if (!profile) {
+      return errorResponse(res, 404, 'Profile not found');
+    }
+    if (typeof isAvailable !== 'undefined') {
+      profile.isAvailable = Boolean(isAvailable);
+    }
+    if (typeof manualBusy !== 'undefined') {
+      profile.manualBusy = Boolean(manualBusy);
+    }
+    await profile.save();
+    successResponse(res, 200, 'Availability updated', { userId, isAvailable: profile.isAvailable, manualBusy: profile.manualBusy });
+  } catch (error) {
+    errorResponse(res, 500, 'Error updating availability', error.message);
   }
 };

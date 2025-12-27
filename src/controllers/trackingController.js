@@ -565,6 +565,9 @@ exports.sendSOSAlert = async (req, res) => {
       latitude: location?.latitude,
       longitude: location?.longitude
     };
+    if (typeof reason !== 'undefined') {
+      walkSession.sosReason = String(reason);
+    }
     await walkSession.save();
 
     const partnerId =
