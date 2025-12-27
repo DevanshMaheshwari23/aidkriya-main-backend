@@ -82,6 +82,13 @@ const walkSessionSchema = new mongoose.Schema({
     latitude: Number,
     longitude: Number
   },
+  sosResolved: {
+    type: Boolean,
+    default: false
+  },
+  sosResolvedAt: {
+    type: Date
+  },
   createdAt: {
     type: Date,
     default: Date.now

@@ -52,6 +52,47 @@ app.get('/', (req, res) => {
   });
 });
 
+// Bootstrap admin user (optional via env)
+(async () => {
+  try {
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    const adminPhone = process.env.ADMIN_PHONE;
+    if (adminEmail && adminPassword && adminPhone) {
+      const User = require('./models/User');
+      const Profile = require('./models/Profile');
+      let admin = await User.findOne({ email: adminEmail });
+      if (!admin) {
+        admin = await User.create({
+          name: 'Administrator',
+          email: adminEmail,
+          phone: adminPhone,
+          password: adminPassword,
+          role: 'ADMIN',
+          isVerified: true
+        });
+        await Profile.create({
+          userId: admin._id,
+          name: 'Administrator'
+        });
+        console.log('✅ Admin user created:', adminEmail);
+      } else if (admin.role !== 'ADMIN') {
+        admin.role = 'ADMIN';
+        await admin.save();
+        console.log('✅ Existing user promoted to ADMIN:', adminEmail);
+      } else {
+        console.log('ℹ️ Admin user exists:', adminEmail);
+      }
+    } else {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('ℹ️ Admin bootstrap skipped (set ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_PHONE)');
+      }
+    }
+  } catch (e) {
+    console.error('⚠️ Admin bootstrap failed:', e.message);
+  }
+})();
+
 // API Routes (versioned under /api)
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/profile', require('./routes/profile'));
@@ -64,6 +105,7 @@ app.use('/api/rating', require('./routes/rating'));
 app.use('/api/feedback', require('./routes/feedback'));
 app.use('/api/notifications', require('./routes/notification'));
 app.use('/api/files', require('./routes/files'));
+app.use('/api/admin', require('./routes/admin'));
 
 // Convenience aliases without /api prefix to support existing Flutter calls
 // e.g. Flutter hitting /auth/login instead of /api/auth/login
@@ -77,6 +119,7 @@ app.use('/rating', require('./routes/rating'));
 app.use('/feedback', require('./routes/feedback'));
 app.use('/notifications', require('./routes/notification'));
 app.use('/files', require('./routes/files'));
+app.use('/admin', require('./routes/admin'));
 
 // Error handlers (must be last)
 app.use(notFound);

@@ -31,7 +31,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['WALKER', 'WANDERER'],
+    enum: ['WALKER', 'WANDERER', 'ADMIN'],
     required: [true, 'Role is required']
   },
   isVerified: {
