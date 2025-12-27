@@ -15,6 +15,7 @@ const {
   getUser,
   updateUserStatus,
   notifyUser,
+  broadcastPromotion,
   updateWalkerAvailability
 } = require('../controllers/adminController');
 const { body } = require('express-validator');
@@ -64,6 +65,16 @@ router.post(
     validate
   ],
   notifyUser
+);
+router.post(
+  '/notify/promotion',
+  [
+    body('role').isIn(['WALKER', 'WANDERER']).withMessage('role must be WALKER or WANDERER'),
+    body('title').notEmpty().withMessage('title required'),
+    body('message').notEmpty().withMessage('message required'),
+    validate
+  ],
+  broadcastPromotion
 );
 router.post(
   '/walker/:userId/availability',

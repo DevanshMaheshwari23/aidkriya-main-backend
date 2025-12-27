@@ -321,6 +321,45 @@ exports.notifyUser = async (req, res) => {
   }
 };
 
+exports.broadcastPromotion = async (req, res) => {
+  try {
+    const { role, title, message, actionUrl, imageUrl, expiresAt, activeOnly = true } = req.body;
+    const targetRole = String(role || '').toUpperCase();
+    if (!['WALKER', 'WANDERER'].includes(targetRole)) {
+      return errorResponse(res, 400, 'Invalid role: must be WALKER or WANDERER');
+    }
+    if (!title || !message) {
+      return errorResponse(res, 400, 'Title and message are required');
+    }
+    const match = { role: targetRole };
+    if (activeOnly) {
+      match.isActive = true;
+    }
+    const users = await User.find(match).select('_id');
+    const userIds = users.map(u => u._id);
+    if (userIds.length === 0) {
+      return successResponse(res, 200, 'No users to notify', { successful: 0, total: 0 });
+    }
+    const options = {
+      type: 'PROMOTION',
+      actionUrl,
+      imageUrl,
+      expiresAt: expiresAt ? new Date(expiresAt) : undefined
+    };
+    const { successful, total } = await require('../utils/notificationHelper').sendBulkNotifications(
+      userIds,
+      title,
+      message,
+      'PROMOTION',
+      {},
+      options
+    );
+    successResponse(res, 200, 'Promotion broadcast sent', { successful, total });
+  } catch (error) {
+    errorResponse(res, 500, 'Error broadcasting promotion', error.message);
+  }
+};
+
 exports.updateWalkerAvailability = async (req, res) => {
   try {
     const { userId } = req.params;

@@ -33,6 +33,7 @@ const notificationSchema = new mongoose.Schema({
       'EARNING_ADDED',     // Earnings credited
       'NEW_RATING',        // New rating received
       'SOS_ALERT',         // Emergency SOS alert
+      'PROMOTION',         // Promotional messages from admin
       'SYSTEM',            // System notifications
       'REMINDER'           // Reminders
     ],
