@@ -66,7 +66,7 @@ app.get('/', (req, res) => {
         admin = await User.create({
           name: 'Administrator',
           email: adminEmail,
-          phone: adminPhone,
+          phone: adminPhone || '9990000000',
           password: adminPassword,
           role: 'ADMIN',
           isVerified: true
@@ -76,12 +76,26 @@ app.get('/', (req, res) => {
           name: 'Administrator'
         });
         console.log('✅ Admin user created:', adminEmail);
-      } else if (admin.role !== 'ADMIN') {
-        admin.role = 'ADMIN';
-        await admin.save();
-        console.log('✅ Existing user promoted to ADMIN:', adminEmail);
       } else {
-        console.log('ℹ️ Admin user exists:', adminEmail);
+        let changed = false;
+        if (admin.role !== 'ADMIN') {
+          admin.role = 'ADMIN';
+          changed = true;
+        }
+        if (adminPassword) {
+          admin.password = adminPassword;
+          changed = true;
+        }
+        if (!admin.isVerified) {
+          admin.isVerified = true;
+          changed = true;
+        }
+        if (changed) {
+          await admin.save();
+          console.log('✅ Admin user updated/promoted:', adminEmail);
+        } else {
+          console.log('ℹ️ Admin user exists:', adminEmail);
+        }
       }
     } else {
       if (process.env.NODE_ENV !== 'production') {
